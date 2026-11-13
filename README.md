@@ -21,6 +21,12 @@ Magpie 是一个本地 AI 模型路由网关：让 Codex、Claude Code、Gemini 
 
 ## 快速开始
 
+### 下载
+
+Windows x64 单文件版本发布在 [GitHub Releases](https://github.com/likou123/MagDsh/releases/latest)。
+
+下载 `MagDsh.exe` 后直接运行即可，不需要安装 Python。
+
 ### 直接运行
 
 ```text
