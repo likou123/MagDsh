@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ctypes
 import os
+import shutil
 import socket
 import subprocess
 import threading
@@ -12,6 +13,11 @@ from ctypes import wintypes
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Iterable, List, Optional
+
+try:
+    import winreg
+except ImportError:  # pragma: no cover - Windows-only application
+    winreg = None
 
 
 # ---------------------------------------------------------------- 软件规格
@@ -29,13 +35,53 @@ class SoftwareSpec:
     exe_name: str
     default_paths: List[str]
     search_roots: List[str]
+    package_roots: List[str] = field(default_factory=list)
 
 
 def _expand(raw: Optional[str]) -> Optional[str]:
     if not raw or not raw.strip():
         return None
-    value = os.path.expandvars(raw.strip().strip('"'))
+    value = os.path.expandvars(os.path.expanduser(raw.strip().strip('"')))
     return value or None
+
+
+_REG_UNINSTALL = r"Software\Microsoft\Windows\CurrentVersion\Uninstall"
+_REG_APP_PATHS = r"Software\Microsoft\Windows\CurrentVersion\App Paths"
+_REG_MAGPIE = r"Software\magpie"
+_REG_VIEWS = (0x0100, 0x0200)  # KEY_WOW64_64KEY, KEY_WOW64_32KEY
+
+
+def _clean_registry_path(raw: Optional[str]) -> Optional[str]:
+    """Normalize registry paths such as '\"C:\\App\\app.exe\",0'."""
+    if not raw or not raw.strip():
+        return None
+    value = raw.strip()
+    if value.startswith('"'):
+        end = value.find('"', 1)
+        value = value[1:end] if end > 0 else value[1:]
+    else:
+        # DisplayIcon often appends ",0" to an unquoted executable path.
+        if value.lower().endswith(",0"):
+            value = value[:-2]
+    return _expand(value.strip().strip('"'))
+
+
+def _registry_value(root: int, key_path: str, value_name: str, view: int) -> Optional[str]:
+    if winreg is None:
+        return None
+    try:
+        with winreg.OpenKey(root, key_path, 0, winreg.KEY_READ | view) as key:
+            value, _kind = winreg.QueryValueEx(key, value_name)
+            return str(value) if value is not None else None
+    except OSError:
+        return None
+
+
+def _trace_discovery(spec: SoftwareSpec, source: str, path: str) -> None:
+    try:
+        Diagnostics.trace(f"Discovery {spec.key} | {source} | {path}")
+    except Exception:
+        pass
 
 
 class SoftwareCatalog:
@@ -56,6 +102,11 @@ class SoftwareCatalog:
             r"%ProgramFiles%",
             r"%ProgramFiles(x86)%",
         ],
+        package_roots=[
+            r"%LOCALAPPDATA%\Microsoft\WinGet\Packages",
+            r"%USERPROFILE%\scoop\apps",
+            r"%ProgramData%\chocolatey\lib",
+        ],
     )
 
     DSH = SoftwareSpec(
@@ -74,6 +125,11 @@ class SoftwareCatalog:
             r"%ProgramFiles%",
             r"%ProgramFiles(x86)%",
         ],
+        package_roots=[
+            r"%LOCALAPPDATA%\Microsoft\WinGet\Packages",
+            r"%USERPROFILE%\scoop\apps",
+            r"%ProgramData%\chocolatey\lib",
+        ],
     )
 
     @staticmethod
@@ -84,19 +140,152 @@ class SoftwareCatalog:
     # -------------------------------------------------------- 查找
     @staticmethod
     def detect_default(spec: SoftwareSpec) -> Optional[str]:
+        seen = set()
+        for source, raw in SoftwareCatalog._candidate_sources(spec):
+            path = SoftwareCatalog._candidate_path(spec, raw)
+            if not path:
+                continue
+            normalized = os.path.normcase(os.path.abspath(path))
+            if normalized in seen:
+                continue
+            seen.add(normalized)
+            _trace_discovery(spec, source, path)
+            return path
+        return None
+
+    @staticmethod
+    def _candidate_path(spec: SoftwareSpec, raw: Optional[str]) -> Optional[str]:
+        candidate = _clean_registry_path(raw)
+        if not candidate:
+            return None
+
+        if os.path.isfile(candidate):
+            if SoftwareCatalog.is_expected_executable(spec, candidate):
+                return os.path.abspath(candidate)
+            if spec.kind == AppKind.MAGPIE and os.path.basename(candidate).lower() == "magpie.com":
+                sibling = os.path.join(os.path.dirname(candidate), "magpie.exe")
+                if SoftwareCatalog.is_expected_executable(spec, sibling):
+                    return os.path.abspath(sibling)
+            return None
+
+        if os.path.isdir(candidate):
+            return SoftwareCatalog._find_in_directory(spec, candidate, 3, 320)
+        return None
+
+    @staticmethod
+    def _candidate_sources(spec: SoftwareSpec):
+        """Yield (source, raw path) in priority order."""
+        yield from SoftwareCatalog._registry_candidates(spec)
+
+        for path in _process_image_paths([spec.exe_name]):
+            yield "running", path
+
+        which = shutil.which(spec.exe_name)
+        if which:
+            yield "path", which
+        if spec.kind == AppKind.MAGPIE:
+            shim = shutil.which("magpie.com")
+            if shim:
+                yield "path-shim", os.path.join(os.path.dirname(shim), "magpie.exe")
+
         for raw in spec.default_paths:
-            path = _expand(raw)
-            if path and SoftwareCatalog.is_expected_executable(spec, path):
-                return path
+            yield "default", raw
+
+        for raw in spec.package_roots:
+            root = _expand(raw)
+            if not root or not os.path.isdir(root):
+                continue
+            tokens = ("magpie",) if spec.kind == AppKind.MAGPIE else ("deepseek", "harness", "dsh")
+            try:
+                entries = list(os.scandir(root))
+            except OSError:
+                continue
+            for entry in entries:
+                try:
+                    if not entry.is_dir(follow_symlinks=False):
+                        continue
+                except OSError:
+                    continue
+                if not any(token in entry.name.lower() for token in tokens):
+                    continue
+                found = SoftwareCatalog._find_in_directory(spec, entry.path, 3, 120)
+                if found:
+                    yield "package", found
 
         for raw in spec.search_roots:
             root = _expand(raw)
             if not root or not os.path.isdir(root):
                 continue
-            found = SoftwareCatalog._find_in_directory(spec, root, 2, 160)
+            found = SoftwareCatalog._find_in_directory(spec, root, 3, 320)
             if found:
-                return found
-        return None
+                yield "scan", found
+
+    @staticmethod
+    def _registry_candidates(spec: SoftwareSpec):
+        if winreg is None:
+            return
+        # Magpie records a user-chosen install folder in HKCU\Software\magpie.
+        if spec.kind == AppKind.MAGPIE:
+            for view in _REG_VIEWS:
+                value = _registry_value(
+                    winreg.HKEY_CURRENT_USER, _REG_MAGPIE, "InstallLocation", view
+                )
+                if value:
+                    yield "magpie-install-key", value
+
+        # App Paths covers PATH-style registration, including per-machine installs.
+        for root in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+            for view in _REG_VIEWS:
+                value = _registry_value(
+                    root,
+                    _REG_APP_PATHS + "\\" + spec.exe_name,
+                    "",
+                    view,
+                )
+                if value:
+                    yield "app-paths", value
+
+        # NSIS/electron-builder and Magpie's uninstaller both publish InstallLocation.
+        needles = (
+            ("magpie",)
+            if spec.kind == AppKind.MAGPIE
+            else ("deepseek harness", "deepseek-harness")
+        )
+        for root in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+            for view in _REG_VIEWS:
+                uninstall_key = _REG_UNINSTALL
+                try:
+                    with winreg.OpenKey(
+                        root, uninstall_key, 0, winreg.KEY_READ | view
+                    ) as key:
+                        index = 0
+                        while True:
+                            try:
+                                subkey_name = winreg.EnumKey(key, index)
+                            except OSError:
+                                break
+                            index += 1
+                            subkey_path = uninstall_key + "\\" + subkey_name
+                            display = _registry_value(
+                                root, subkey_path, "DisplayName", view
+                            )
+                            if not display:
+                                continue
+                            lowered = display.lower()
+                            if not any(needle in lowered for needle in needles):
+                                continue
+                            location = _registry_value(
+                                root, subkey_path, "InstallLocation", view
+                            )
+                            if location:
+                                yield "uninstall-location", location
+                            icon = _registry_value(
+                                root, subkey_path, "DisplayIcon", view
+                            )
+                            if icon:
+                                yield "uninstall-icon", icon
+                except OSError:
+                    continue
 
     @staticmethod
     def find_configured(spec: SoftwareSpec, configured_path: Optional[str]) -> Optional[str]:
@@ -119,7 +308,7 @@ class SoftwareCatalog:
             if os.path.isfile(path):
                 return os.path.abspath(path) if SoftwareCatalog.is_expected_executable(spec, path) else None
             if os.path.isdir(path):
-                return SoftwareCatalog._find_in_directory(spec, path, 2, 260)
+                return SoftwareCatalog._find_in_directory(spec, path, 3, 360)
         except OSError:
             pass
         return None
@@ -288,6 +477,15 @@ _kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
 _kernel32.CloseHandle.restype = wintypes.BOOL
 _kernel32.DeleteFileW.argtypes = [wintypes.LPCWSTR]
 _kernel32.DeleteFileW.restype = wintypes.BOOL
+_kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+_kernel32.OpenProcess.restype = wintypes.HANDLE
+_kernel32.QueryFullProcessImageNameW.argtypes = [
+    wintypes.HANDLE,
+    wintypes.DWORD,
+    wintypes.LPWSTR,
+    ctypes.POINTER(wintypes.DWORD),
+]
+_kernel32.QueryFullProcessImageNameW.restype = wintypes.BOOL
 
 _user32.ShowWindowAsync.argtypes = [wintypes.HWND, ctypes.c_int]
 _user32.ShowWindowAsync.restype = wintypes.BOOL
@@ -318,6 +516,41 @@ def _process_ids_by_name(exe_name: str) -> List[int]:
         while True:
             if (entry.szExeFile or "").lower() == exe_name.lower():
                 result.append(int(entry.th32ProcessID))
+            if not _kernel32.Process32NextW(snapshot, ctypes.byref(entry)):
+                break
+    finally:
+        _kernel32.CloseHandle(snapshot)
+    return result
+
+
+def _process_image_paths(exe_names: Iterable[str]) -> List[str]:
+    """Return executable paths for running processes with one of the names."""
+    targets = {name.lower() for name in exe_names if name}
+    result: List[str] = []
+    snapshot = _kernel32.CreateToolhelp32Snapshot(_TH32CS_SNAPPROCESS, 0)
+    if not snapshot or snapshot == _INVALID_HANDLE_VALUE:
+        return result
+
+    try:
+        entry = _PROCESSENTRY32W()
+        entry.dwSize = ctypes.sizeof(_PROCESSENTRY32W)
+        if not _kernel32.Process32FirstW(snapshot, ctypes.byref(entry)):
+            return result
+        while True:
+            if (entry.szExeFile or "").lower() in targets:
+                process = _kernel32.OpenProcess(0x1000, False, entry.th32ProcessID)
+                if process:
+                    try:
+                        buffer = ctypes.create_unicode_buffer(32768)
+                        size = wintypes.DWORD(len(buffer))
+                        if _kernel32.QueryFullProcessImageNameW(
+                            process, 0, buffer, ctypes.byref(size)
+                        ):
+                            path = buffer.value.strip()
+                            if path:
+                                result.append(path)
+                    finally:
+                        _kernel32.CloseHandle(process)
             if not _kernel32.Process32NextW(snapshot, ctypes.byref(entry)):
                 break
     finally:

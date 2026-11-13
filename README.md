@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/likou123/MagDsh/releases/latest"><img src="https://img.shields.io/badge/release-v1.1.0-F26B22?style=flat-square" alt="Release"></a>
+  <a href="https://github.com/likou123/MagDsh/releases/latest"><img src="https://img.shields.io/badge/release-v1.1.1-F26B22?style=flat-square" alt="Release"></a>
   <img src="https://img.shields.io/badge/Windows-10%20%2F%2011-151515?style=flat-square&logo=windows&logoColor=white" alt="Windows 10/11">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-151515?style=flat-square" alt="MIT License"></a>
 </p>
@@ -30,6 +30,7 @@
 
 - **桌面不再被Magpie主界面挡住**：Magpie只在托盘里工作。
 - **DSH始终是最后的前台窗口**：不会启动完又跳回Magpie。
+- **不同安装方式都能找到**：优先读取安装注册表、App Paths和运行中进程，再回退到默认目录、PATH、Scoop/winget/Chocolatey目录。
 - **不用每次选路径**：自动检测安装目录，找不到时引导选择并记住。
 - **不弹UAC**：以当前用户权限运行，不请求管理员权限。
 - **尺寸稳定**：在Windows 125%等缩放下，UI不会整体放大。
@@ -38,7 +39,7 @@
 ## 下载
 
 <p align="center">
-  <a href="https://github.com/likou123/MagDsh/releases/download/v1.1.0/MagDsh.exe"><img src="https://img.shields.io/badge/Download-MagDsh.exe-F26B22?style=for-the-badge" alt="Download MagDsh.exe"></a>
+  <a href="https://github.com/likou123/MagDsh/releases/download/v1.1.1/MagDsh.exe"><img src="https://img.shields.io/badge/Download-MagDsh.exe-F26B22?style=for-the-badge" alt="Download MagDsh.exe"></a>
 </p>
 
 Windows x64单文件，不需要安装Python。首次运行未签名程序可能触发SmartScreen，选择**更多信息 → 仍要运行**即可。
@@ -47,7 +48,7 @@ Windows x64单文件，不需要安装Python。首次运行未签名程序可能
 <summary>SHA256</summary>
 
 ```text
-f56957bdc5b0c62017f83361a6a26bc8754a6f9ee33bb15c1abe07828e621be3
+6f090aa5ff7684f00eefac6be7de3a10e0781079d998aeb497f7b9eb2a3e978d
 ```
 
 </details>
@@ -140,8 +141,13 @@ MagDsh/
 ## 说明
 
 - **Magpie和DSH不是本项目的一部分**，需要单独安装；它们的许可证、更新和配置由各自项目负责。
+- 支持默认安装、系统级安装、Magpie自定义安装目录、Scoop/winget/Chocolatey，以及运行中的便携版；完全未知的便携目录可在“软件位置”窗口手动选择。
 - 本项目只负责启动与路径选择，不代理模型请求，也不保存API Key。
 - 配置和日志位于`%LOCALAPPDATA%\MagDsh\`。
+
+## 更新日志
+
+见 [CHANGELOG.md](CHANGELOG.md)。1.1.1 主要增加了多安装方式的自动发现。
 
 ## License
 
