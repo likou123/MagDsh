@@ -27,6 +27,12 @@ Windows x64 单文件版本发布在 [GitHub Releases](https://github.com/likou1
 
 下载 `MagDsh.exe` 后直接运行即可，不需要安装 Python。
 
+SHA256：
+
+```text
+f56957bdc5b0c62017f83361a6a26bc8754a6f9ee33bb15c1abe07828e621be3
+```
+
 ### 直接运行
 
 ```text
