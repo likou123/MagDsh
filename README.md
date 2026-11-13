@@ -1,6 +1,11 @@
-<p align="center">
-  <img src="source/shots/magdsh-hero.png" width="900" alt="MagDsh — Magpie + DeepSeek Harness launcher">
-</p>
+<div align="center">
+
+<a href="https://github.com/likou123/MagDsh"><img src="source/图标/MagDsh.ico" width="112" alt="MagDsh"></a>
+
+# MagDsh
+
+### Magpie in the tray. DSH in front.
+</div>
 
 <p align="center">
   <strong>一个安静的 Windows 启动器</strong><br>
