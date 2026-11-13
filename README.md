@@ -4,8 +4,6 @@
 
 **MagDsh** 是一个 Windows 桌面启动器：一次点击，先让 **Magpie** 在托盘后台运行，再启动 **DeepSeek Harness (DSH)** 并把 DSH 带到前台。
 
-Magpie 是一个本地 AI 模型路由网关：让 Codex、Claude Code、Gemini CLI、DeepSeek Harness 等 Agent 统一接入 DeepSeek、Kimi、GLM、Claude、OpenAI 等模型供应商。它不是窗口缩放工具。
-
 ![MagDsh 软件位置界面](source/shots/settings-optimized.png)
 
 ## 功能
