@@ -1,0 +1,23 @@
+# Local build output
+/MagDsh.exe
+/source/build/MagDsh.exe
+/dist/
+/build/
+*.spec
+
+# Python virtual environment
+/source/.venv/
+
+# Python caches
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Logs and local state
+*.log
+*.ini
+.DS_Store
+Thumbs.db
+
+# PyInstaller work directories
+/source/build/temp/
