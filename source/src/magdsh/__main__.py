@@ -48,7 +48,7 @@ from .launcher_form import APP_VERSION, LauncherForm
 from .settings_form import SettingsForm
 
 HELP_TEXT = (
-    "MagDsh 1.1\r\n\r\n"
+    "MagDsh 1.1.1\r\n\r\n"
     "双击 MagDsh.exe：启动 Magpie，然后启动 DeepSeek Harness。\r\n"
     "如果未找到软件，会自动打开路径选择窗口。\r\n\r\n"
     "MagDsh.exe --settings\r\n"
